@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//home/thegranwil/Documentos/Cerebro/Proyectos/**)",
+      "Read(//home/thegranwil/Documentos/Cerebro/Sesiones/**)"
+    ],
+    "additionalDirectories": [
+      "/home/thegranwil/Documentos/Cerebro/Proyectos",
+      "/home/thegranwil/Documentos/Cerebro/Sesiones"
+    ]
+  }
+}
