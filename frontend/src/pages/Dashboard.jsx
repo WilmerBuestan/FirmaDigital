@@ -256,7 +256,13 @@ export default function Dashboard() {
   async function handleVerificarIntegridad(documentoId) {
     try {
       const r = await verificarIntegridad(documentoId);
-      toast(r.integro ? "exito" : "error", r.integro ? "Integridad OK: el hash coincide" : "¡Alerta! El archivo fue modificado");
+      if (r.integro === null || r.integro === undefined) {
+        toast("warn", r.mensaje || "El archivo original no está en el servidor (almacenamiento temporal). La firma criptográfica sigue siendo válida.");
+      } else if (r.integro) {
+        toast("exito", "Integridad OK — el archivo no fue alterado desde que se subió");
+      } else {
+        toast("error", "¡Alerta! El hash no coincide — el contenido del archivo fue modificado");
+      }
     } catch {
       toast("error", "Error al verificar integridad");
     }
@@ -265,8 +271,8 @@ export default function Dashboard() {
   async function handleDescargarFirmado(documento) {
     try {
       await descargarPdfFirmado(documento.id, documento.nombre_archivo);
-    } catch (err) {
-      toast("warn", err.response?.data?.detail || "Este documento aún no tiene PDF firmado disponible");
+    } catch {
+      toast("warn", "El PDF firmado no está disponible en el servidor. En Render (plan gratuito) los archivos se borran al reiniciar. Vuelve a firmar el documento para regenerarlo.");
     }
   }
 
