@@ -3,7 +3,8 @@
     "allow": [
       "Read(//home/thegranwil/Documentos/Cerebro/Proyectos/**)",
       "Read(//home/thegranwil/Documentos/Cerebro/Sesiones/**)",
-      "Bash(node --input-type=module --eval ' *)"
+      "Bash(node --input-type=module --eval ' *)",
+      "Bash(npm run *)"
     ],
     "additionalDirectories": [
       "/home/thegranwil/Documentos/Cerebro/Proyectos",
