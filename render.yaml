@@ -2,14 +2,13 @@ services:
   - type: web
     name: firma-digital-backend
     runtime: python
-    rootDir: backend
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: DATABASE_URL
-        sync: false          # lo pones manualmente en el dashboard de Render
+        sync: false
       - key: SECRET_KEY
-        sync: false          # genera con: python -c "import secrets; print(secrets.token_hex(32))"
+        sync: false
       - key: FRONTEND_URL
-        sync: false          # URL de tu frontend en Vercel, ej: https://firma.vercel.app
+        sync: false
     healthCheckPath: /health
