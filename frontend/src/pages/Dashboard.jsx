@@ -21,6 +21,7 @@ import {
   verificarIntegridad,
   eliminarDocumento,
 } from "../api/documentos";
+import { verificarPorArchivo } from "../api/verificacionPublica";
 
 export default function Dashboard() {
   const [certificados, setCertificados] = useState([]);
@@ -35,8 +36,19 @@ export default function Dashboard() {
   const [infoPdfEditor, setInfoPdfEditor] = useState(null);
   const [bytesPdfEditor, setBytesPdfEditor] = useState(null);
   const [archivoClavePendiente, setArchivoClavePendiente] = useState(null);
+  const [passphrasePendiente, setPassphrasePendiente] = useState(null);
   const [certificadoIdPendiente, setCertificadoIdPendiente] = useState(null);
   const [certificadoElegidoPorDocumento, setCertificadoElegidoPorDocumento] = useState({});
+  const [passphrasePorDocumento, setPassphrasePorDocumento] = useState({});
+
+  // Emisión de certificado
+  const [passphraseNuevoCert, setPassphraseNuevoCert] = useState("");
+  const [mostrarPassphraseCert, setMostrarPassphraseCert] = useState(false);
+
+  // Verificación por archivo
+  const [archivoVerificar, setArchivoVerificar] = useState(null);
+  const [resultadoVerificacion, setResultadoVerificacion] = useState(null);
+  const [verificando, setVerificando] = useState(false);
 
   function agregarMensaje(tipo, texto) {
     setMensajes((prev) => [{ tipo, texto, id: Date.now() }, ...prev].slice(0, 6));
@@ -70,10 +82,18 @@ export default function Dashboard() {
 
   async function handleEmitirCertificado() {
     try {
-      const cert = await emitirCertificado(nombreCertificado.trim());
+      const cert = await emitirCertificado(
+        nombreCertificado.trim(),
+        passphraseNuevoCert.trim() || null,
+      );
       setClaveDescargada(cert);
       setNombreCertificado("");
-      agregarMensaje("exito", `Certificado "${cert.nombre || cert.numero_serie}" emitido. Descarga tu clave privada ahora.`);
+      setPassphraseNuevoCert("");
+      setMostrarPassphraseCert(false);
+      const aviso = passphraseNuevoCert.trim()
+        ? "Clave privada protegida con passphrase. Descárgala ahora — necesitarás esa contraseña para firmar."
+        : "Descarga tu clave privada ahora y guárdala en lugar seguro.";
+      agregarMensaje("exito", `Certificado "${cert.nombre || cert.numero_serie}" emitido. ${aviso}`);
       cargarDatos();
     } catch (err) {
       agregarMensaje("error", err.response?.data?.detail || "Error al emitir certificado");
@@ -125,7 +145,7 @@ export default function Dashboard() {
     }
   }
 
-  async function handleArchivoClaveParaFirmar(documento, certificadoIdStr, archivoClave) {
+  async function handleArchivoClaveParaFirmar(documento, certificadoIdStr, archivoClave, passphrase) {
     const certificadoId = certificadoIdStr ? Number(certificadoIdStr) : null;
     if (!certificadoId) {
       agregarMensaje("error", "Selecciona un certificado antes de cargar la clave privada");
@@ -164,6 +184,7 @@ export default function Dashboard() {
       setBytesPdfEditor(bytes);
       setDocumentoEditando(documento);
       setArchivoClavePendiente(archivoClave);
+      setPassphrasePendiente(passphrase || null);
       setCertificadoIdPendiente(certificadoId);
       setEditorAbierto(true);
     } catch (err) {
@@ -173,7 +194,7 @@ export default function Dashboard() {
 
   async function handleConfirmarPosicionFirma({ pagina, x, y }) {
     try {
-      await firmarDocumento(documentoEditando.id, certificadoIdPendiente, archivoClavePendiente, pagina, x, y);
+      await firmarDocumento(documentoEditando.id, certificadoIdPendiente, archivoClavePendiente, pagina, x, y, passphrasePendiente);
       agregarMensaje("exito", `"${documentoEditando.nombre_archivo}" firmado y sellado correctamente`);
       cerrarEditor();
       cargarDatos();
@@ -188,7 +209,23 @@ export default function Dashboard() {
     setInfoPdfEditor(null);
     setBytesPdfEditor(null);
     setArchivoClavePendiente(null);
+    setPassphrasePendiente(null);
     setCertificadoIdPendiente(null);
+  }
+
+  async function handleVerificarPorArchivo(e) {
+    e.preventDefault();
+    if (!archivoVerificar) return;
+    setVerificando(true);
+    setResultadoVerificacion(null);
+    try {
+      const resultado = await verificarPorArchivo(archivoVerificar);
+      setResultadoVerificacion(resultado);
+    } catch (err) {
+      agregarMensaje("error", err.response?.data?.detail || "Error al verificar el archivo");
+    } finally {
+      setVerificando(false);
+    }
   }
 
   async function handleVerificarFirma(documentoId) {
@@ -260,6 +297,23 @@ export default function Dashboard() {
               onChange={(e) => setNombreCertificado(e.target.value)}
               className="input-nombre-certificado"
             />
+            <button
+              type="button"
+              className="btn-small"
+              onClick={() => setMostrarPassphraseCert((v) => !v)}
+            >
+              🔒 {mostrarPassphraseCert ? "Sin passphrase" : "Proteger con passphrase"}
+            </button>
+            {mostrarPassphraseCert && (
+              <input
+                type="password"
+                placeholder="Passphrase (mín. 8 caracteres) — la necesitarás para firmar"
+                value={passphraseNuevoCert}
+                onChange={(e) => setPassphraseNuevoCert(e.target.value)}
+                className="input-nombre-certificado"
+                minLength={8}
+              />
+            )}
             <button onClick={handleEmitirCertificado}>+ Emitir certificado</button>
           </div>
 
@@ -340,12 +394,26 @@ export default function Dashboard() {
                             </option>
                           ))}
                         </select>
+                        <input
+                          type="password"
+                          placeholder="Passphrase de la clave (si la protegiste)"
+                          value={passphrasePorDocumento[d.id] || ""}
+                          onChange={(e) =>
+                            setPassphrasePorDocumento((prev) => ({ ...prev, [d.id]: e.target.value }))
+                          }
+                          className="input-passphrase-firma"
+                        />
                         <SelectorArchivo
                           etiqueta="Cargue su CLAVE PRIVADA (.pem que dice PRIVATE KEY)"
                           accept=".pem"
                           archivoActual={null}
                           onFileSelected={(file) =>
-                            handleArchivoClaveParaFirmar(d, certificadoElegidoPorDocumento[d.id], file)
+                            handleArchivoClaveParaFirmar(
+                              d,
+                              certificadoElegidoPorDocumento[d.id],
+                              file,
+                              passphrasePorDocumento[d.id] || null,
+                            )
                           }
                         />
                       </>
@@ -363,6 +431,64 @@ export default function Dashboard() {
               ))}
             </tbody>
           </table>
+        </section>
+
+        <section className="panel">
+          <div className="panel-header">
+            <h2>🔍 Verificar documento firmado</h2>
+          </div>
+          <p className="texto-tenue">
+            Sube cualquier PDF firmado en esta plataforma para comprobar su autenticidad y ver quién lo firmó.
+          </p>
+          <form className="upload-form" onSubmit={handleVerificarPorArchivo}>
+            <SelectorArchivo
+              etiqueta="Selecciona el documento a verificar"
+              archivoActual={archivoVerificar}
+              onFileSelected={setArchivoVerificar}
+            />
+            <button type="submit" disabled={!archivoVerificar || verificando}>
+              {verificando ? "Verificando…" : "Verificar autenticidad"}
+            </button>
+          </form>
+
+          {resultadoVerificacion && (
+            <div className={`resultado-verificacion ${resultadoVerificacion.autentico ? "resultado-ok" : resultadoVerificacion.encontrado ? "resultado-warn" : "resultado-error"}`}>
+              {!resultadoVerificacion.encontrado && (
+                <p>❌ <strong>No encontrado.</strong> {resultadoVerificacion.mensaje}</p>
+              )}
+              {resultadoVerificacion.encontrado && !resultadoVerificacion.firmado && (
+                <p>⚠ <strong>Sin firma.</strong> {resultadoVerificacion.mensaje}</p>
+              )}
+              {resultadoVerificacion.firmado && (
+                <>
+                  <p className={resultadoVerificacion.autentico ? "texto-exito" : "texto-error"}>
+                    {resultadoVerificacion.autentico ? "✅ Documento auténtico" : "⚠ No se pudo verificar la autenticidad"}
+                  </p>
+                  <p>{resultadoVerificacion.verificacion?.mensaje}</p>
+                  <div className="verificacion-detalle">
+                    <div>
+                      <strong>Documento</strong>
+                      <p>{resultadoVerificacion.documento?.nombre_archivo}</p>
+                      <p>Firmado el {new Date(resultadoVerificacion.documento?.subido_en).toLocaleString()}</p>
+                    </div>
+                    <div>
+                      <strong>Firmante</strong>
+                      <p>{resultadoVerificacion.firmante?.nombre_completo || resultadoVerificacion.firmante?.username}</p>
+                      {resultadoVerificacion.firmante?.cedula && <p>C.I. {resultadoVerificacion.firmante.cedula}</p>}
+                      {resultadoVerificacion.firmante?.titulo_profesional && <p>{resultadoVerificacion.firmante.titulo_profesional}</p>}
+                      {resultadoVerificacion.firmante?.trabajo && <p>{resultadoVerificacion.firmante.trabajo}</p>}
+                    </div>
+                    <div>
+                      <strong>Certificado</strong>
+                      <p>Serie: {resultadoVerificacion.certificado?.numero_serie?.slice(0, 16)}…</p>
+                      <p>Estado: <span className={`badge badge-${resultadoVerificacion.certificado?.estado}`}>{resultadoVerificacion.certificado?.estado}</span></p>
+                      <p>Expira: {new Date(resultadoVerificacion.certificado?.fecha_expiracion).toLocaleDateString()}</p>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </section>
       </div>
 

@@ -14,6 +14,8 @@ from app.services import crypto_service, ca_service
 
 router = APIRouter(prefix="/certificados", tags=["Certificados"])
 
+_CERT_NOT_FOUND = "Certificado no encontrado"
+
 
 @router.post("/emitir", response_model=CertificadoEmitidoOut, status_code=status.HTTP_201_CREATED)
 def emitir_certificado(
@@ -36,7 +38,8 @@ def emitir_certificado(
     """
     nombre = payload.nombre if payload else None
 
-    clave_privada_pem, clave_publica_pem = crypto_service.generar_par_claves_rsa()
+    passphrase = payload.passphrase if payload else None
+    clave_privada_pem, clave_publica_pem = crypto_service.generar_par_claves_rsa(passphrase=passphrase)
 
     numero_serie, certificado_pem, expiracion = ca_service.emitir_certificado(
         usuario_id=current_user.id,
@@ -92,7 +95,7 @@ def descargar_certificado(
         Certificado.id == certificado_id, Certificado.propietario_id == current_user.id
     ).first()
     if not cert:
-        raise HTTPException(status_code=404, detail="Certificado no encontrado")
+        raise HTTPException(status_code=404, detail=_CERT_NOT_FOUND)
 
     nombre_archivo = f"certificado_{cert.nombre or cert.numero_serie[:10]}.pem"
     return Response(
@@ -119,7 +122,7 @@ def obtener_certificado(
 ):
     cert = db.query(Certificado).filter(Certificado.id == certificado_id).first()
     if not cert:
-        raise HTTPException(status_code=404, detail="Certificado no encontrado")
+        raise HTTPException(status_code=404, detail=_CERT_NOT_FOUND)
     return cert
 
 
@@ -132,7 +135,7 @@ def validar_certificado(
     """Valida un certificado: firma de la CA, vigencia y estado (revocado/expirado)."""
     cert = db.query(Certificado).filter(Certificado.id == certificado_id).first()
     if not cert:
-        raise HTTPException(status_code=404, detail="Certificado no encontrado")
+        raise HTTPException(status_code=404, detail=_CERT_NOT_FOUND)
 
     if cert.estado == "revocado":
         return {"valido": False, "estado": "revocado", "motivo": "Certificado revocado manualmente"}
@@ -150,7 +153,7 @@ def revocar_certificado(
     """Revocar un certificado (no se borra, se marca como revocado para trazabilidad)."""
     cert = db.query(Certificado).filter(Certificado.id == certificado_id).first()
     if not cert:
-        raise HTTPException(status_code=404, detail="Certificado no encontrado")
+        raise HTTPException(status_code=404, detail=_CERT_NOT_FOUND)
 
     cert.estado = "revocado"
     db.commit()

@@ -43,9 +43,10 @@ export async function obtenerBytesDocumento(documentoId) {
   }
 }
 
-export async function firmarDocumento(documentoId, certificadoId, archivoClavePrivada, pagina, x, y) {
+export async function firmarDocumento(documentoId, certificadoId, archivoClavePrivada, pagina, x, y, passphrase = null) {
   const formData = new FormData();
   formData.append("archivo_clave", archivoClavePrivada);
+  if (passphrase) formData.append("passphrase", passphrase);
   const params = new URLSearchParams({
     certificado_id: certificadoId,
     pagina,

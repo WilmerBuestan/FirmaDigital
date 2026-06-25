@@ -46,6 +46,12 @@ class TokenResponse(BaseModel):
 # ---------- Certificado ----------
 class EmitirCertificadoRequest(BaseModel):
     nombre: Optional[str] = Field(default=None, max_length=100)
+    passphrase: Optional[str] = Field(
+        default=None,
+        min_length=8,
+        max_length=128,
+        description="Si se provee, la clave privada quedará cifrada con esta contraseña.",
+    )
 
 
 class CertificadoOut(BaseModel):

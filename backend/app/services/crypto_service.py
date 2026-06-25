@@ -87,19 +87,26 @@ def descifrar_aes(data_cifrada: bytes, password: str) -> bytes:
 # =========================================================
 # 3. CRIPTOGRAFÍA ASIMÉTRICA — RSA (firma digital / intercambio de claves)
 # =========================================================
-def generar_par_claves_rsa():
+def generar_par_claves_rsa(passphrase: str | None = None) -> tuple[str, str]:
     """
     Genera un par de claves RSA-2048.
-    Retorna (clave_privada_pem, clave_publica_pem) como strings.
-    La clave privada NUNCA debe salir del servidor/usuario propietario.
+    Si se provee passphrase, la clave privada queda cifrada con AES-256-CBC
+    (BestAvailableEncryption) y solo puede usarse conociendo esa passphrase.
+    Retorna (clave_privada_pem, clave_publica_pem).
     """
     clave_privada = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     clave_publica = clave_privada.public_key()
 
+    encryption = (
+        serialization.BestAvailableEncryption(passphrase.encode())
+        if passphrase
+        else serialization.NoEncryption()
+    )
+
     privada_pem = clave_privada.private_bytes(
         encoding=serialization.Encoding.PEM,
         format=serialization.PrivateFormat.PKCS8,
-        encryption_algorithm=serialization.NoEncryption(),
+        encryption_algorithm=encryption,
     ).decode()
 
     publica_pem = clave_publica.public_bytes(
@@ -110,8 +117,15 @@ def generar_par_claves_rsa():
     return privada_pem, publica_pem
 
 
-def _cargar_clave_privada(pem: str):
-    return serialization.load_pem_private_key(pem.encode(), password=None)
+def _cargar_clave_privada(pem: str, passphrase: str | None = None):
+    password = passphrase.encode() if passphrase else None
+    try:
+        return serialization.load_pem_private_key(pem.encode(), password=password)
+    except (TypeError, ValueError) as e:
+        raise ValueError(
+            "No se pudo descifrar la clave privada. "
+            "Verifica que la passphrase sea correcta."
+        ) from e
 
 
 def _cargar_clave_publica(pem: str):
@@ -121,12 +135,13 @@ def _cargar_clave_publica(pem: str):
 # =========================================================
 # 4. FIRMA DIGITAL (usa RSA + SHA-256)
 # =========================================================
-def firmar_documento(data: bytes, clave_privada_pem: str) -> str:
+def firmar_documento(data: bytes, clave_privada_pem: str, passphrase: str | None = None) -> str:
     """
     Firma digitalmente un documento.
     Proceso: hash SHA-256 del documento -> firma RSA del hash -> base64.
+    Si la clave privada está cifrada, se requiere la passphrase.
     """
-    clave_privada = _cargar_clave_privada(clave_privada_pem)
+    clave_privada = _cargar_clave_privada(clave_privada_pem, passphrase)
     firma = clave_privada.sign(
         data,
         padding.PSS(

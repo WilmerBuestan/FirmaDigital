@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Read(//home/thegranwil/Documentos/Cerebro/Proyectos/**)",
-      "Read(//home/thegranwil/Documentos/Cerebro/Sesiones/**)"
+      "Read(//home/thegranwil/Documentos/Cerebro/Sesiones/**)",
+      "Bash(node --input-type=module --eval ' *)"
     ],
     "additionalDirectories": [
       "/home/thegranwil/Documentos/Cerebro/Proyectos",

@@ -6,7 +6,8 @@ de firma VISUAL sobre PDF con sello + código QR de verificación pública.
 import os
 import uuid
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from pathlib import Path
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from typing import List
@@ -22,6 +23,7 @@ router = APIRouter(prefix="/documentos", tags=["Documentos"])
 
 UPLOAD_DIR = "uploads"
 FIRMADOS_DIR = "firmados"
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(FIRMADOS_DIR, exist_ok=True)
 
@@ -48,9 +50,16 @@ async def subir_documento(
 ):
     """Sube un documento, calcula su hash SHA-256 y lo guarda en disco."""
     contenido = await file.read()
+
+    if len(contenido) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail="El archivo no puede superar 10 MB")
+
+    # Path traversal fix: Path().name extrae solo el nombre, descarta cualquier
+    # componente de directorio que pueda venir en file.filename (ej: "../../etc/passwd")
+    safe_name = Path(file.filename).name
     hash_archivo = crypto_service.calcular_sha256(contenido)
 
-    ruta = os.path.join(UPLOAD_DIR, f"{current_user.id}_{uuid.uuid4().hex[:8]}_{file.filename}")
+    ruta = os.path.join(UPLOAD_DIR, f"{current_user.id}_{uuid.uuid4().hex[:8]}_{safe_name}")
     with open(ruta, "wb") as f:
         f.write(contenido)
 
@@ -125,6 +134,7 @@ async def firmar_documento(
     pos_x: float,
     pos_y: float,
     archivo_clave: UploadFile = File(...),
+    passphrase: str | None = Form(default=None),
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
 ):
@@ -179,7 +189,10 @@ async def firmar_documento(
 
     # --- 1. Firma criptográfica (sobre el contenido ORIGINAL, sin sello) ---
     try:
-        firma_b64 = crypto_service.firmar_documento(contenido, clave_privada_pem)
+        firma_b64 = crypto_service.firmar_documento(contenido, clave_privada_pem, passphrase=passphrase)
+    except ValueError as e:
+        # Passphrase incorrecta o clave cifrada sin passphrase
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception:
         raise HTTPException(
             status_code=400,

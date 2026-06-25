@@ -11,7 +11,7 @@ profesional), fecha de firma, estado del certificado y resultado de la
 verificación de integridad. Nunca expone claves, hashes completos sin
 contexto, ni datos del archivo en sí.
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -19,6 +19,91 @@ from app.models.models import Documento, Certificado, PerfilProfesional, Usuario
 from app.services import crypto_service, ca_service
 
 router = APIRouter(prefix="/verificar", tags=["Verificación Pública"])
+
+_MAX_VERIFY_SIZE = 10 * 1024 * 1024  # 10 MB
+
+
+def _info_firmante(firmante: Usuario, perfil: PerfilProfesional | None) -> dict:
+    return {
+        "username": firmante.username,
+        "nombre_completo": perfil.nombre_completo if perfil else None,
+        "cedula": perfil.cedula if perfil else None,
+        "titulo_profesional": perfil.titulo_profesional if perfil else None,
+        "trabajo": perfil.trabajo if perfil else None,
+        "ubicacion": perfil.ubicacion if perfil else None,
+    }
+
+
+@router.post("/por-archivo")
+async def verificar_por_archivo(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    """
+    Sube cualquier archivo y la plataforma busca si fue registrado y/o firmado
+    comparando su hash SHA-256. No requiere autenticación.
+    Útil para verificar un PDF firmado descargado sin necesitar el código QR.
+    """
+    contenido = await file.read()
+    if len(contenido) > _MAX_VERIFY_SIZE:
+        raise HTTPException(status_code=413, detail="El archivo no puede superar 10 MB")
+
+    hash_archivo = crypto_service.calcular_sha256(contenido)
+    doc = db.query(Documento).filter(Documento.hash_sha256 == hash_archivo).first()
+
+    if not doc:
+        return {
+            "encontrado": False,
+            "mensaje": (
+                "Este archivo no está registrado en la plataforma. "
+                "Puede haber sido modificado después de la firma, o no fue subido aquí."
+            ),
+        }
+
+    if not doc.firma_digital or not doc.certificado_id:
+        return {
+            "encontrado": True,
+            "firmado": False,
+            "documento": {"nombre_archivo": doc.nombre_archivo, "subido_en": doc.subido_en.isoformat()},
+            "mensaje": "El archivo está registrado pero todavía no tiene firma digital.",
+        }
+
+    cert = db.query(Certificado).filter(Certificado.id == doc.certificado_id).first()
+    firmante = db.query(Usuario).filter(Usuario.id == doc.propietario_id).first()
+    perfil = db.query(PerfilProfesional).filter(PerfilProfesional.usuario_id == doc.propietario_id).first()
+
+    firma_valida = crypto_service.verificar_firma(contenido, doc.firma_digital, cert.clave_publica_pem)
+    estado_cert = ca_service.validar_certificado(cert.certificado_pem)
+    autentico = firma_valida and estado_cert["valido"] and cert.estado == "vigente"
+
+    return {
+        "encontrado": True,
+        "firmado": True,
+        "autentico": autentico,
+        "documento": {
+            "nombre_archivo": doc.nombre_archivo,
+            "hash_sha256": doc.hash_sha256,
+            "codigo_verificacion": doc.codigo_verificacion,
+            "subido_en": doc.subido_en.isoformat(),
+        },
+        "firmante": _info_firmante(firmante, perfil),
+        "certificado": {
+            "numero_serie": cert.numero_serie,
+            "emisor": cert.emisor,
+            "estado": cert.estado,
+            "fecha_expiracion": cert.fecha_expiracion.isoformat(),
+        },
+        "verificacion": {
+            "firma_valida": firma_valida,
+            "certificado_valido": estado_cert["valido"],
+            "mensaje": (
+                "Documento auténtico: firma válida y certificado vigente."
+                if autentico else
+                "Atención: el documento no pudo verificarse como auténtico. "
+                "Puede haber sido alterado, o el certificado fue revocado/expiró."
+            ),
+        },
+    }
 
 
 @router.get("/{codigo_verificacion}")

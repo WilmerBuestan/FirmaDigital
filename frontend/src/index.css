@@ -916,3 +916,48 @@ tbody tr:hover {
   font-weight: 600;
   text-align: right;
 }
+
+/* ── Passphrase inputs ── */
+.input-passphrase-firma {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  font-size: 13px;
+  margin-bottom: 6px;
+  background: #fafbfd;
+}
+
+/* ── Verificación por archivo ── */
+.resultado-verificacion {
+  margin-top: 16px;
+  padding: 18px 20px;
+  border-radius: 10px;
+  border: 1px solid var(--panel-border);
+}
+.resultado-ok   { background: var(--success-light); border-color: var(--success); }
+.resultado-warn { background: var(--warning-light); border-color: var(--warning); }
+.resultado-error{ background: var(--danger-light);  border-color: var(--danger);  }
+
+.verificacion-detalle {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--panel-border);
+}
+.verificacion-detalle > div {
+  font-size: 13px;
+  line-height: 1.6;
+}
+.verificacion-detalle > div strong {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.texto-exito { color: var(--success); font-weight: 600; }
+.texto-error  { color: var(--danger);  font-weight: 600; }

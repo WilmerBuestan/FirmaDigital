@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.database import engine, Base
+from app.core.config import FRONTEND_URL
 from app.routers import auth, usuarios, certificados, documentos, perfil, verificacion_publica, auditoria
 
 # Crea las tablas en SQLite si no existen
@@ -22,11 +23,9 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# CORS abierto para desarrollo (el frontend React corre en otro puerto).
-# En producción, restringir 'allow_origins' al dominio real del frontend.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[FRONTEND_URL, "http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

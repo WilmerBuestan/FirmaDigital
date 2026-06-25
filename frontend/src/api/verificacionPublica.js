@@ -6,3 +6,10 @@ export async function verificarDocumentoPublico(codigo) {
   const { data } = await axios.get(`${API_URL}/verificar/${codigo}`);
   return data;
 }
+
+export async function verificarPorArchivo(file) {
+  const formData = new FormData();
+  formData.append("file", file);
+  const { data } = await axios.post(`${API_URL}/verificar/por-archivo`, formData);
+  return data;
+}

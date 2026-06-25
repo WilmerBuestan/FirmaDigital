@@ -1,7 +1,10 @@
 import apiClient from "./client";
 
-export async function emitirCertificado(nombre) {
-  const { data } = await apiClient.post("/certificados/emitir", { nombre: nombre || null });
+export async function emitirCertificado(nombre, passphrase = null) {
+  const { data } = await apiClient.post("/certificados/emitir", {
+    nombre: nombre || null,
+    passphrase: passphrase || null,
+  });
   return data; // incluye clave_privada_pem UNA SOLA VEZ
 }
 
