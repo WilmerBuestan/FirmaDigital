@@ -4,7 +4,8 @@
       "Read(//home/thegranwil/Documentos/Cerebro/Proyectos/**)",
       "Read(//home/thegranwil/Documentos/Cerebro/Sesiones/**)",
       "Bash(node --input-type=module --eval ' *)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(python -c \"from app.main import app; print\\('OK'\\)\")"
     ],
     "additionalDirectories": [
       "/home/thegranwil/Documentos/Cerebro/Proyectos",

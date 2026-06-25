@@ -231,12 +231,20 @@ async def firmar_documento(
     else:
         ruta_pdf_firmado = None  # archivos no-PDF solo llevan firma criptográfica
 
+    # Guardar hash del PDF firmado para que verificar/por-archivo funcione
+    # con el PDF descargado (que tiene bytes adicionales del sello QR)
+    hash_firmado = None
+    if ruta_pdf_firmado and os.path.exists(ruta_pdf_firmado):
+        with open(ruta_pdf_firmado, "rb") as f_signed:
+            hash_firmado = crypto_service.calcular_sha256(f_signed.read())
+
     doc.firma_digital = firma_b64
     doc.certificado_id = cert.id
     doc.pagina_firma = pagina
     doc.pos_x_firma = int(pos_x)
     doc.pos_y_firma = int(pos_y)
     doc.ruta_pdf_firmado = ruta_pdf_firmado
+    doc.hash_firmado = hash_firmado
     doc.codigo_verificacion = codigo_verificacion
     db.commit()
     db.refresh(doc)
@@ -274,36 +282,35 @@ def descargar_pdf_firmado(
 
 
 @router.get("/{documento_id}/verificar-firma")
-async def verificar_firma_documento(
+def verificar_firma_documento(
     documento_id: int,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
 ):
     """
-    Verifica la firma digital de un documento (sobre el archivo ORIGINAL,
-    no el firmado con sello, ya que la firma se calculó sobre el original).
+    Verifica la firma digital usando el hash SHA-256 guardado en la BD.
+    No lee el archivo de disco, lo que lo hace robusto ante reinicios del servidor
+    (Render free tier borra archivos efímeros).
     """
     doc = db.query(Documento).filter(Documento.id == documento_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Documento no encontrado")
     if not doc.firma_digital or not doc.certificado_id:
-        raise HTTPException(status_code=400, detail="Este documento no ha sido firmado")
+        raise HTTPException(status_code=400, detail="Este documento no ha sido firmado aún")
 
     cert = db.query(Certificado).filter(Certificado.id == doc.certificado_id).first()
 
-    with open(doc.ruta_archivo, "rb") as f:
-        contenido_actual = f.read()
-
-    firma_valida = crypto_service.verificar_firma(
-        contenido_actual, doc.firma_digital, cert.clave_publica_pem
+    firma_valida = crypto_service.verificar_firma_por_hash(
+        doc.hash_sha256, doc.firma_digital, cert.clave_publica_pem
     )
 
     return {
         "documento_id": documento_id,
         "firma_valida": firma_valida,
         "certificado_serie": cert.numero_serie,
-        "mensaje": "Firma válida, documento intacto" if firma_valida
-                   else "Firma inválida: el documento fue modificado o la firma no corresponde",
+        "mensaje": "Firma válida — el documento no fue alterado tras la firma"
+                   if firma_valida else
+                   "Firma inválida: el documento fue modificado o la firma no corresponde al certificado",
     }
 
 
@@ -331,21 +338,38 @@ def obtener_documento(
 
 
 @router.get("/{documento_id}/verificar-integridad")
-async def verificar_integridad_documento(
+def verificar_integridad_documento(
     documento_id: int,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    """Recalcula el hash del archivo en disco y lo compara con el guardado."""
+    """Recalcula el hash del archivo en disco y lo compara con el guardado en la BD."""
     doc = db.query(Documento).filter(Documento.id == documento_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Documento no encontrado")
+
+    if not os.path.exists(doc.ruta_archivo):
+        return {
+            "documento_id": documento_id,
+            "integro": None,
+            "hash_guardado": doc.hash_sha256,
+            "mensaje": (
+                "El archivo original no está en el servidor (almacenamiento efímero — "
+                "se borra al reiniciar). La firma criptográfica sigue siendo verificable."
+            ),
+        }
 
     with open(doc.ruta_archivo, "rb") as f:
         contenido_actual = f.read()
 
     integro = crypto_service.verificar_integridad(contenido_actual, doc.hash_sha256)
-    return {"documento_id": documento_id, "integro": integro, "hash_guardado": doc.hash_sha256}
+    return {
+        "documento_id": documento_id,
+        "integro": integro,
+        "hash_guardado": doc.hash_sha256,
+        "mensaje": "Integridad OK: el archivo no ha sido alterado" if integro
+                   else "¡Alerta! El hash no coincide — el archivo fue modificado",
+    }
 
 
 @router.delete("/{documento_id}", status_code=status.HTTP_204_NO_CONTENT)

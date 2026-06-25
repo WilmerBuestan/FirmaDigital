@@ -13,6 +13,7 @@ import hashlib
 import os
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
+from cryptography.hazmat.primitives.asymmetric.utils import Prehashed
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 import base64
@@ -169,6 +170,30 @@ def verificar_firma(data: bytes, firma_b64: str, clave_publica_pem: str) -> bool
                 salt_length=padding.PSS.MAX_LENGTH,
             ),
             hashes.SHA256(),
+        )
+        return True
+    except Exception:
+        return False
+
+
+def verificar_firma_por_hash(hash_hex: str, firma_b64: str, clave_publica_pem: str) -> bool:
+    """
+    Verifica una firma RSA usando el hash SHA-256 pre-calculado sin necesitar el archivo original.
+    Permite verificar la firma cuando el archivo no está disponible en disco
+    (p.ej. Render free tier borra archivos al reiniciar).
+    """
+    clave_publica = _cargar_clave_publica(clave_publica_pem)
+    firma = base64.b64decode(firma_b64)
+    hash_bytes = bytes.fromhex(hash_hex)
+    try:
+        clave_publica.verify(
+            firma,
+            hash_bytes,
+            padding.PSS(
+                mgf=padding.MGF1(hashes.SHA256()),
+                salt_length=padding.PSS.MAX_LENGTH,
+            ),
+            Prehashed(hashes.SHA256()),
         )
         return True
     except Exception:

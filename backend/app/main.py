@@ -5,13 +5,33 @@ Proyecto Final - Ingeniería de Seguridad del Software.
 """
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 from app.core.database import engine, Base
 from app.core.config import FRONTEND_URL
 from app.routers import auth, usuarios, certificados, documentos, perfil, verificacion_publica, auditoria
 
-# Crea las tablas en SQLite si no existen
 Base.metadata.create_all(bind=engine)
+
+# Migración segura: agrega columnas nuevas sin borrar datos existentes.
+# create_all() no añade columnas en tablas ya creadas, así que lo hacemos manualmente.
+def _run_migrations():
+    with engine.connect() as conn:
+        dialect = engine.dialect.name
+        _migrations = [
+            ("documentos", "hash_firmado", "VARCHAR"),
+        ]
+        for table, column, col_type in _migrations:
+            try:
+                if dialect == "sqlite":
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
+                else:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {col_type}"))
+                conn.commit()
+            except Exception:
+                pass  # La columna ya existe
+
+_run_migrations()
 
 app = FastAPI(
     title="Plataforma Segura de Firma Digital",

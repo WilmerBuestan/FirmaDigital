@@ -58,6 +58,7 @@ class Documento(Base):
     pos_x_firma = Column(Integer, nullable=True)  # coordenada X (puntos PDF) elegida por el usuario
     pos_y_firma = Column(Integer, nullable=True)  # coordenada Y (puntos PDF) elegida por el usuario
     ruta_pdf_firmado = Column(String, nullable=True)  # PDF final con sello visual + QR estampados
+    hash_firmado = Column(String, nullable=True)       # hash SHA-256 del PDF firmado (distinto al original)
     codigo_verificacion = Column(String, unique=True, nullable=True, index=True)  # UUID corto para el QR
     subido_en = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 

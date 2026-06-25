@@ -40,23 +40,31 @@ async def verificar_por_archivo(
     db: Session = Depends(get_db),
 ):
     """
-    Sube cualquier archivo y la plataforma busca si fue registrado y/o firmado
-    comparando su hash SHA-256. No requiere autenticación.
-    Útil para verificar un PDF firmado descargado sin necesitar el código QR.
+    Sube cualquier archivo y la plataforma busca si fue registrado y/o firmado.
+    Acepta TANTO el PDF original como el PDF firmado (con sello QR):
+      - Original  → busca por hash_sha256
+      - Firmado   → busca por hash_firmado (guardado al estampar el sello)
+    No requiere autenticación.
     """
     contenido = await file.read()
     if len(contenido) > _MAX_VERIFY_SIZE:
         raise HTTPException(status_code=413, detail="El archivo no puede superar 10 MB")
 
     hash_archivo = crypto_service.calcular_sha256(contenido)
+
+    # Buscar primero por el hash del original, luego por el del PDF firmado
     doc = db.query(Documento).filter(Documento.hash_sha256 == hash_archivo).first()
+    es_pdf_firmado = False
+    if not doc:
+        doc = db.query(Documento).filter(Documento.hash_firmado == hash_archivo).first()
+        es_pdf_firmado = doc is not None
 
     if not doc:
         return {
             "encontrado": False,
             "mensaje": (
                 "Este archivo no está registrado en la plataforma. "
-                "Puede haber sido modificado después de la firma, o no fue subido aquí."
+                "Sube el PDF original o el PDF firmado descargado desde la plataforma."
             ),
         }
 
@@ -72,7 +80,15 @@ async def verificar_por_archivo(
     firmante = db.query(Usuario).filter(Usuario.id == doc.propietario_id).first()
     perfil = db.query(PerfilProfesional).filter(PerfilProfesional.usuario_id == doc.propietario_id).first()
 
-    firma_valida = crypto_service.verificar_firma(contenido, doc.firma_digital, cert.clave_publica_pem)
+    # Si el usuario subió el PDF firmado (con QR), verificar usando el hash del ORIGINAL
+    # guardado en BD, porque la firma RSA fue calculada sobre el contenido original.
+    if es_pdf_firmado:
+        firma_valida = crypto_service.verificar_firma_por_hash(
+            doc.hash_sha256, doc.firma_digital, cert.clave_publica_pem
+        )
+    else:
+        firma_valida = crypto_service.verificar_firma(contenido, doc.firma_digital, cert.clave_publica_pem)
+
     estado_cert = ca_service.validar_certificado(cert.certificado_pem)
     autentico = firma_valida and estado_cert["valido"] and cert.estado == "vigente"
 
@@ -120,10 +136,10 @@ def verificar_documento_publico(codigo_verificacion: str, db: Session = Depends(
     firmante = db.query(Usuario).filter(Usuario.id == doc.propietario_id).first()
     perfil = db.query(PerfilProfesional).filter(PerfilProfesional.usuario_id == doc.propietario_id).first()
 
-    with open(doc.ruta_archivo, "rb") as f:
-        contenido_actual = f.read()
-
-    firma_valida = crypto_service.verificar_firma(contenido_actual, doc.firma_digital, cert.clave_publica_pem)
+    # Verificar usando el hash guardado en BD (no leer del disco, que es efímero en Render)
+    firma_valida = crypto_service.verificar_firma_por_hash(
+        doc.hash_sha256, doc.firma_digital, cert.clave_publica_pem
+    )
     estado_certificado = ca_service.validar_certificado(cert.certificado_pem)
 
     autentico = firma_valida and estado_certificado["valido"] and cert.estado == "vigente"
